@@ -46,14 +46,32 @@ function extractEmails(e) {
   const labelName = e.formInput.labelName;
   if (!labelName) {
     return CardService.newActionResponseBuilder()
-      .setNotification(CardService.newNotification()
-        .setText('Please enter a label name.'))
+      .setNotification(CardService.newNotification().setText('Please enter a label name.'))
       .build();
   }
 
   try {
-    const threads = GmailApp.getUserLabelByName(labelName).getThreads();
-    const sheet = SpreadsheetApp.create(`Emails from ${labelName}`);
+    const label = GmailApp.getUserLabelByName(labelName);
+
+    // Check if the label exists. If not, return a user-friendly error.
+    if (!label) {
+      return CardService.newActionResponseBuilder()
+        .setNotification(CardService.newNotification().setText(`Error: The label "${labelName}" was not found.`))
+        .build();
+    }
+
+    const threads = label.getThreads();
+
+    // Check if the label has any emails to process.
+    if (threads.length === 0) {
+      return CardService.newActionResponseBuilder()
+        .setNotification(CardService.newNotification().setText(`The label "${labelName}" contains no emails to extract.`))
+        .build();
+    }
+
+    // Add a timestamp to the sheet name to ensure it is unique.
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const sheet = SpreadsheetApp.create(`Emails from ${labelName} ${timestamp}`);
     const sheetData = [['datum', 'afzender', 'ontvanger', 'titel', 'tekstinhoud', 'attachments']];
 
     threads.forEach(thread => {
@@ -74,15 +92,19 @@ function extractEmails(e) {
     sheet.getRange(1, 1, sheetData.length, sheetData[0].length).setValues(sheetData);
 
     const sheetUrl = sheet.getUrl();
+    // Create a clickable link in the response for easy access to the sheet.
+    const openLinkAction = CardService.newOpenLink().setUrl(sheetUrl);
+
     return CardService.newActionResponseBuilder()
-      .setNotification(CardService.newNotification()
-        .setText(`Emails extracted successfully! [View Sheet](${sheetUrl})`))
+      .setNotification(CardService.newNotification().setText(`Extracted ${sheetData.length - 1} emails successfully!`))
+      .setOpenLink(openLinkAction)
       .build();
 
   } catch (error) {
+    // Log the full error for debugging and show a generic error to the user.
+    console.error(`Error in extractEmails: ${error.toString()}`);
     return CardService.newActionResponseBuilder()
-      .setNotification(CardService.newNotification()
-        .setText(`Error: ${error.toString()}`))
+      .setNotification(CardService.newNotification().setText(`An unexpected error occurred. Please check the script logs for details.`))
       .build();
   }
 }
